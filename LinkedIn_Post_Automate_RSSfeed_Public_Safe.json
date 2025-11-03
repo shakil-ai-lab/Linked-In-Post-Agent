@@ -1,0 +1,737 @@
+{
+  "name": "LinkedIn Post Automate RSSfeed with image upload",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "\n// Set the look-back period (in hours) and buffer (in minutes)\nconst lastPollHours = 6; // 6 hours\nconst bufferMinutes = 15; // 15 minutes buffer\n\n// Calculate the threshold date\nconst lastPollTime = new Date(Date.now() - (lastPollHours * 60 + bufferMinutes) * 60 * 1000);\n\n// Filter only videos published after the threshold\nconst newItems = items.filter(item => {\n  const publishedDate = new Date(item.json.isoDate);\n  return publishedDate > lastPollTime;\n});\n\n// Map the filtered items to extract video info\nconst videos = newItems.map(item => {\n  let videoId = \"\";\n\n  // Extract YouTube video ID from 'id' or 'link'\n  if (item.json.id?.startsWith(\"yt:video:\")) {\n    videoId = item.json.id.replace(\"yt:video:\", \"\");\n  } else if (item.json.link) {\n    const match = item.json.link.match(/v=([^&]+)/);\n    if (match) videoId = match[1];\n  }\n\n  return {\n    json: {\n      channel: item.json.author || \"\", // channel name for multiple channels\n      title: item.json.title || \"\",\n      videoId,\n      link: item.json.link || \"\",\n      isoDate: item.json.isoDate || \"\"\n    }\n  };\n});\n\n// Return the final array\nreturn videos;\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4832,
+        -1808
+      ],
+      "id": "e4448980-6d39-49df-9189-d569993ad798",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "eef84e7f-cbbc-4f25-a5ad-e9d5e87fd702",
+              "name": "data.transcripts",
+              "value": "={{$json.data.transcripts}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -4432,
+        -1808
+      ],
+      "id": "4d7327a9-45dd-423f-bc71-412c24fafc2d",
+      "name": "Extract Transcript"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const transcripts = item.json?.data?.transcripts || {};\n  let transcriptBlocks = [];\n\n  // Try to auto-detect any transcript language available\n  const langKeys = Object.keys(transcripts);\n  for (const key of langKeys) {\n    if (transcripts[key]?.custom?.length) {\n      transcriptBlocks = transcripts[key].custom;\n      break;\n    }\n  }\n\n  if (!transcriptBlocks.length) {\n    return { json: { transcript: \"\", error: \"No transcript found in any language\" } };\n  }\n\n  const combinedText = transcriptBlocks\n    .map(block => block.text?.trim() || \"\")\n    .join(\" \");\n\n  return {\n    json: {\n      transcript: combinedText\n    }\n  };\n});\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4224,
+        -1808
+      ],
+      "id": "55887359-e510-4be2-8b80-2396a95bfb06",
+      "name": "Combine Transcript"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -4080,
+        -1584
+      ],
+      "id": "2f1439a3-4269-46bf-9f71-30ac2af9d612",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "bpPXcMCK12WWk5db",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "person": "RLhzlLyoEG",
+        "text": "={{ $json.output.Title }}\n{{ $json.output.post }}",
+        "shareMediaCategory": "IMAGE",
+        "binaryPropertyName": "=data",
+        "additionalFields": {
+          "visibility": "PUBLIC"
+        }
+      },
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [
+        -4256,
+        -1360
+      ],
+      "id": "5c60a1ba-c5d8-41c4-8524-c6eae7c48d4f",
+      "name": "Create a post",
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "id": "XBOjy737nflvl2mx",
+          "name": "LinkedIncRredentialN8n"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -4912,
+        -1040
+      ],
+      "id": "fe6d88c9-9962-435a-8eb2-515510b06196",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "bpPXcMCK12WWk5db",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.transcript }}",
+        "hasOutputParser": true,
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "You are a professional transcript cleaner and translator.\nYour job is to convert raw transcripts into clean, natural English.\n\nObjectives:\n\nPreserve meaning and speaker intent.\n\nImprove grammar, punctuation, and readability.\n\nRemove filler words such as \"um\", \"you know\", \"like\", etc.\n\nDo not summarize, shorten, or interpret.\n\nRemove all line break symbols (\\n, \\n\\n) and return plain text.\n\nIf transcript is already in English, just polish it grammatically.\n\nOutput Expectation:\nReturn only the cleaned English transcript as plain text.\nNo titles, headings, or explanations."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -4016,
+        -1808
+      ],
+      "id": "f2de3eb1-1f7a-462a-87d2-aaf61ef3fe51",
+      "name": "Give Clean Transript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}",
+        "hasOutputParser": true,
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=Role:\nYou are a senior n8n automation engineer and expert prompt engineer. You will receive a transcript (from Agent AI node1). Your job is to transform that transcript into two deliverables: (1) a professional LinkedIn post and (2) a single-line Flux.1-optimized cover-image prompt \u2014 then package both into one strict JSON object ready for downstream nodes.\n\nTask 1 \u2014 LinkedIn post (post):\n\nDetect the main focus (company, product, person, or topic) and make it central to the Title and the opening hook.\n\nProduce a clear, professional LinkedIn post that is natural and easy to read:\n\nStart with a one-line hook that names the topic.\n\nUse single \\n line breaks between paragraphs (no blank lines).\n\nAfter a short explanatory paragraph, include a concise bullet list of 2\u20135 action-oriented takeaways (each bullet on its own line prefixed with - ).\n\nEnd with a one-line takeaway or reflective question to invite engagement.\n\nAppend 3\u20135 professional hashtags on the final line (space-separated).\n\nTone: conversational, professional, active voice. No emojis, no slang, no long dashes, no unnecessary formatting.\n\nPreserve the transcript\u2019s main ideas; do not invent facts. If a claim is unverified or time-sensitive, prefix with \u201cAccording to the transcript,\u201d.\n\nKeep sentences short and readable; prioritize clarity.\n\nTask 2 \u2014 Flux.1 cover-image prompt (image_prompt):\n\nProduce a single-line, production-ready Flux.1 prompt optimized for automated generation.\n\nInclude: subject, primary composition, visual style, mood/lighting, aspect ratio/size hint (e.g., 1280x720), and 3\u20136 short keyword tags.\n\nOptionally include a short negative clause prefixed with --no to exclude unwanted elements.\n\nKeep the image prompt \u2264 280 characters and a single line. Avoid parentheses, line breaks, or JSON inside the prompt.\n\nOutput structure and strict rules (must be followed exactly):\n\nOnly output valid JSON and nothing else (no comments, no extra text).\n\nTop-level JSON must have exactly one key: \"output\".\n\nThe value of \"output\" must be an object with exactly three keys, in this order: \"Title\", \"post\", \"image_prompt\".\n\n\"Title\": a short, strong title (\u2264 120 characters) focused on the detected main topic.\n\n\"post\": the LinkedIn post string, containing the hook, paragraphs, bullets, takeaway, and hashtags. Escape all double quotes inside this string as \\\".\n\n\"image_prompt\": the single-line Flux.1 prompt string. Escape double quotes as \\\" if present.\n\nExample schema (must not be produced verbatim in final output; adhere to this structure):\n{\n\"output\": {\n\"Title\": \"Short focused title\",\n\"post\": \"POST text with \\n single-line breaks\\n- Bullet 1\\n- Bullet 2\\nFinal takeaway line.\\n#Tag1 #Tag2\",\n\"image_prompt\": \"Single-line Flux.1 prompt, 1280x720, clean editorial style --no clutter\"\n}\n}\n\nCharacter limit: the entire JSON (including keys, braces, quotes, spaces and values) must be \u2264 3000 characters. If content would exceed this, shorten the \"post\" (compress sentences, reduce bullets, remove minor adjectives). If required, truncate from the end but preserve the final takeaway line and the hashtags.\n\nDo not output additional whitespace, newlines outside the JSON structure, metadata, or any text before/after the JSON.\n\nEnsure JSON is syntactically valid and parsable.\n\nQuality rules:\n\nTitle must reflect the primary subject from the transcript (company/product/person/topic).\n\nBullets must be action-oriented or clear takeaways.\n\nHashtags should be professional and relevant (topic + industry). Use 3\u20135 hashtags.\n\nImage prompt should favor clean, modern, minimal editorial design suitable for LinkedIn cover images (e.g., \u201cclean layout, bold typography, subtle gradient\u201d).\n\nDo not invent specific numeric claims or dates. If necessary, attribute to the transcript.\n\nBehavioral safeguards:\n\nIf transcript requests prohibited content, output this exact JSON:\n{\"output\":{\"Title\":\"Content Restricted\",\"post\":\"According to the transcript, content not allowed.\",\"image_prompt\":\"\"}}\n\nIf transcript contains unverified claims or time-sensitive details, rephrase with \u201cAccording to the transcript,\u201d.\n\nIf the transcript is empty or unintelligible, return:\n{\"output\":{\"Title\":\"Unclear Transcript\",\"post\":\"Transcript was empty or unclear. Please provide a valid transcript.\",\"image_prompt\":\"\"}}\n\nImplementation notes for downstream use:\n\nEnsure double quotes inside post and image_prompt are escaped.\n\nKeep image_prompt ready to pass directly to Flux.1 without additional parsing."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -4832,
+        -1264
+      ],
+      "id": "89887057-a195-44bb-a155-aaf59ecabbc3",
+      "name": "Prepar LinkedIn Post"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\"Title\": \"Short focused title\",\n\"post\": \"POST text with \\n single-line breaks\\n- Bullet 1\\n- Bullet 2\\nFinal takeaway line.\\n#Tag1 #Tag2\",\n\"image_prompt\": \"Single-line Flux.1 prompt, 1280x720, clean editorial style --no clutter\"\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -4640,
+        -1040
+      ],
+      "id": "f7606152-2401-4a8d-888b-b32d0795371a",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a2952380-232a-4912-b78a-152e1c2f6311",
+              "name": "post link",
+              "value": "=https://www.linkedin.com/feed/update/{{ $json.urn }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -4080,
+        -1360
+      ],
+      "id": "683e2008-0b9f-4c9e-98d1-fc6738e4c43c",
+      "name": "Get Linkedin Post Link"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1XCKXNrOHcQIfK7p_kX4UrVGjUznSks2PXC4eQuv7GPM",
+          "mode": "list",
+          "cachedResultName": "LinkedIn Posts from youtube",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1XCKXNrOHcQIfK7p_kX4UrVGjUznSks2PXC4eQuv7GPM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1XCKXNrOHcQIfK7p_kX4UrVGjUznSks2PXC4eQuv7GPM/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Image Link": "={{ $json.webViewLink }}",
+            "Video Link": "={{ $('Code in JavaScript').item.json.link }}",
+            "Post Title": "={{ $('Prepar LinkedIn Post').item.json.output.Title }}",
+            "Post ": "={{ $('Prepar LinkedIn Post').item.json.output.post }}"
+          },
+          "matchingColumns": [
+            "Video Link"
+          ],
+          "schema": [
+            {
+              "id": "Video Link",
+              "displayName": "Video Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Post Title",
+              "displayName": "Post Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Post Link",
+              "displayName": "Post Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Link",
+              "displayName": "Image Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Post ",
+              "displayName": "Post ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -3968,
+        -1088
+      ],
+      "id": "1c347e81-d0d3-4b00-90f7-cb20f99cf530",
+      "name": "Keep Record of Post",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "RmMXI7psNe1IIw8M",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "{{HUGGINGFACE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "image/png"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "inputs",
+              "value": "={{ $json.output.image_prompt }}{{\".\"}}{{\"Image should be clean editorial design --no text --no watermark --no logo\"\n  }}"
+            },
+            {
+              "name": "size",
+              "value": "\"1280x720\""
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4480,
+        -1264
+      ],
+      "id": "989c03ee-bb38-4ee7-bf1e-c8b379f607c8",
+      "name": "To Generate Cover Image"
+    },
+    {
+      "parameters": {
+        "name": "={{\"image-\"+Date.now()}}\n",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1i28jLb9copZ9MhHcjIFaXvowidUZ7Vxu",
+          "mode": "list",
+          "cachedResultName": "LikedIn Images",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1i28jLb9copZ9MhHcjIFaXvowidUZ7Vxu"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -4192,
+        -1088
+      ],
+      "id": "3587aa50-5796-4846-a816-621b204b5d27",
+      "name": "Upload Image",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "0zInjMyaA9E8peqy",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://youtube-video-summarizer-gpt-ai.p.rapidapi.com/api/v1/get-transcript-v2",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "video_id",
+              "value": "={{ $json.videoId }}"
+            },
+            {
+              "name": "platform",
+              "value": "youtube"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-host",
+              "value": "youtube-video-summarizer-gpt-ai.p.rapidapi.com"
+            },
+            {
+              "name": "x-rapidapi-key",
+              "value": "{{RAPIDAPI_KEY}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4640,
+        -1808
+      ],
+      "id": "84b16943-dfa6-4228-b496-79df7400f794",
+      "name": "Transcript of Link"
+    },
+    {
+      "parameters": {
+        "content": "# Youtube Video Transcriptor",
+        "height": 496,
+        "width": 1376
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -5072,
+        -1920
+      ],
+      "typeVersion": 1,
+      "id": "ac52fc36-5bac-4d02-84df-a2184e90ef02",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "# Post on Linked in\n",
+        "height": 528,
+        "width": 1376,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -5072,
+        -1376
+      ],
+      "typeVersion": 1,
+      "id": "b3ec5e44-7716-4c84-b2f8-ab9be849e9b9",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "# Linked In Post Automation Workflow",
+        "height": 224,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -5376,
+        -1488
+      ],
+      "typeVersion": 1,
+      "id": "64d89423-6ece-425c-bd83-6d8042eebf30",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        -3936,
+        -1584
+      ],
+      "id": "1c5ae844-8877-481e-926f-41a9b11c77d4",
+      "name": "DeepSeek Chat Model",
+      "credentials": {
+        "deepSeekApi": {
+          "id": "HTxI6ZsoqzPp7qbs",
+          "name": "DeepSeek account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        -4784,
+        -1040
+      ],
+      "id": "cd011f61-f273-4ce7-9363-ae8299f1a554",
+      "name": "DeepSeek Chat Model1",
+      "credentials": {
+        "deepSeekApi": {
+          "id": "HTxI6ZsoqzPp7qbs",
+          "name": "DeepSeek account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 6
+            }
+          ]
+        },
+        "feedUrl": "https://www.youtube.com/feeds/videos.xml?channel_id=UC5l7RouTQ60oUjLjt1Nh-UQ"
+      },
+      "type": "n8n-nodes-base.rssFeedReadTrigger",
+      "typeVersion": 1,
+      "position": [
+        -5024,
+        -1808
+      ],
+      "id": "458ed143-8df9-49dd-a688-8185918a43e3",
+      "name": "RSS Feed"
+    },
+    {
+      "parameters": {
+        "content": "# \ud83d\udd12 API Key Setup Guide\n\nBefore running this workflow:\n\n1\ufe0f\u20e3 Add your RapidAPI key in the 'Transcript of Link' node.\n2\ufe0f\u20e3 Add your HuggingFace key in the 'To Generate Cover Image' node.\n3\ufe0f\u20e3 Add your Google Drive, Sheets, and LinkedIn credentials in their respective nodes.\n4\ufe0f\u20e3 Add your Gemini / DeepSeek credentials in the language model nodes.\n\n\u26a0\ufe0f Do NOT commit your actual API keys to GitHub.\nUse n8n Credentials Manager to store them securely.",
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -5600,
+        -1900
+      ],
+      "id": "sanitized-api-guide",
+      "name": "API Key Setup Guide"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Transcript of Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transcript": {
+      "main": [
+        [
+          {
+            "node": "Combine Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Transcript": {
+      "main": [
+        [
+          {
+            "node": "Give Clean Transript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Give Clean Transript",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Prepar LinkedIn Post",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Give Clean Transript": {
+      "main": [
+        [
+          {
+            "node": "Prepar LinkedIn Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepar LinkedIn Post": {
+      "main": [
+        [
+          {
+            "node": "To Generate Cover Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Prepar LinkedIn Post",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a post": {
+      "main": [
+        [
+          {
+            "node": "Get Linkedin Post Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Linkedin Post Link": {
+      "main": [
+        [
+          {
+            "node": "Keep Record of Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To Generate Cover Image": {
+      "main": [
+        [
+          {
+            "node": "Create a post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image": {
+      "main": [
+        [
+          {
+            "node": "Keep Record of Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcript of Link": {
+      "main": [
+        [
+          {
+            "node": "Extract Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Give Clean Transript",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DeepSeek Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Prepar LinkedIn Post",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RSS Feed": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e26e3dba-eb87-4249-96ec-acf9525498e8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0c2aacf359d14a2a0ea07c9d9ec6122e7311a92a6e2f265394c9b42b0ba8eb00"
+  },
+  "id": "PMPTntVuLFWL7Vcz",
+  "tags": []
+}
