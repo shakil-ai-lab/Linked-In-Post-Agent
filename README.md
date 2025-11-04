@@ -1,4 +1,9 @@
-# 🚀 LinkedIn Post Automation (RSS → AI → LinkedIn)
+# 🚀 LinkedIn Post Automation with Image Upload (RSS → AI → LinkedIn)
+
+## 🎬 Video Demo
+
+Watch the full workflow demo here:  
+▶️ https://youtu.be/Zgv1KPXB6Cc
 
 ## 📘 Overview
 This workflow is a **fully automated content pipeline** built with **n8n** that transforms your **YouTube channel content** into **professional LinkedIn posts** — complete with an **AI-generated cover image**, **clean transcript**, and **Google Sheets tracking**.
